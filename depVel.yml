@@ -1,0 +1,52 @@
+---
+- name: Deploy Velociraptor Client
+  hosts: linux_clients
+  become: yes
+  vars:
+    velociraptor_dir: "/opt/velociraptor"
+    binary_src: "./velociraptor"
+    config_src: "./client.config.yaml"
+
+  tasks:
+    - name: Ensure Velociraptor directory exists
+      ansible.builtin.file:
+        path: "{{ velociraptor_dir }}"
+        state: directory
+        mode: '0755'
+
+    - name: Copy Velociraptor binary and config
+      ansible.builtin.copy:
+        src: "{{ item.src }}"
+        dest: "{{ item.dest }}"
+        mode: "{{ item.mode }}"
+      loop:
+        - { src: "{{ binary_src }}", dest: "{{ velociraptor_dir }}/velociraptor", mode: '0755' }
+        - { src: "{{ config_src }}", dest: "{{ velociraptor_dir }}/client.config.yaml", mode: '0640' }
+
+    - name: Deploy systemd service unit
+      ansible.builtin.copy:
+        dest: /etc/systemd/system/velociraptor_client.service
+        content: |
+          [Unit]
+          Description=Velociraptor Client
+          After=network.target
+          [Service]
+          Type=simple
+          ExecStart={{ velociraptor_dir }}/velociraptor --config {{ velociraptor_dir }}/client.config.yaml client -v
+          Restart=always
+          [Install]
+          WantedBy=multi-user.target
+      notify: Restart Velociraptor
+
+    - name: Enable and start service
+      ansible.builtin.systemd:
+        name: velociraptor_client
+        enabled: yes
+        state: started
+        daemon_reload: yes
+
+  handlers:
+    - name: Restart Velociraptor
+      ansible.builtin.systemd:
+        name: velociraptor_client
+        state: restarted
